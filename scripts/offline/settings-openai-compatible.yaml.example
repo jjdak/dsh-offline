@@ -1,0 +1,23 @@
+# 适用于 vLLM、SGLang 或其他提供 OpenAI Chat Completions 接口的内网网关。
+llm-pi-ai:
+  providers:
+    intranet-deepseek:
+      displayName: 内网 DeepSeek
+      apiKeyEnv: INTRANET_DEEPSEEK_API_KEY
+      api: openai-completions
+      baseURL: http://REPLACE_MODEL_HOST:REPLACE_MODEL_PORT/v1
+      compat:
+        thinkingFormat: deepseek
+        supportsDeveloperRole: false
+        maxTokensField: max_tokens
+      defaultContextWindow: 131072
+      defaultMaxTokens: 8192
+      models:
+        - id: REPLACE_MODEL_ID
+          name: 内网 DeepSeek
+          contextWindow: 131072
+          maxTokens: 8192
+
+agent-default-model:
+  provider: intranet-deepseek
+  model: REPLACE_MODEL_ID

@@ -1,0 +1,280 @@
+#!/usr/bin/env bash
+
+if [ -z "${BASH_VERSION:-}" ]; then
+  printf '%s\n' 'install-and-run: 请使用 Bash 运行：bash install-and-run.sh' >&2
+  exit 2
+fi
+
+bash_major="${BASH_VERSION%%.*}"
+if [ "$bash_major" -lt 4 ]; then
+  printf 'install-and-run: 需要 Bash 4 或更高版本，当前为 %s\n' "$BASH_VERSION" >&2
+  exit 2
+fi
+
+set -euo pipefail
+
+# ===== 维护者配置：分发脚本前填写 =====
+# 指向离线压缩包的固定软链接绝对路径，例如 /share/dsh-offline/latest。
+PUBLIC_ARCHIVE_PATH=""
+# ===== 配置结束：以下内容无需修改 =====
+
+archive_path="$PUBLIC_ARCHIVE_PATH"
+install_parent="${HOME:?HOME 未设置}/.local"
+user_bin="$install_parent/bin"
+dsh_link="$user_bin/dsh"
+install_only=false
+assume_yes=false
+port="${DSH_OFFLINE_PORT:-3080}"
+copy_dir=""
+stage_dir=""
+
+usage() {
+  cat <<EOF
+用法：bash install-and-run.sh [--install-only] [--port PORT] [--yes]
+
+从维护者配置的 latest 软链接安装并启动 DeepSeek Harness 纯文字离线版。
+
+选项：
+  --install-only  安装并验证，但不启动 Web 服务
+  --port PORT     Web 服务端口，默认 3080
+  --yes           跳过执行前确认，仅用于自动化运行
+  --help          显示帮助
+
+维护者在脚本顶部的 PUBLIC_ARCHIVE_PATH 中填写 latest 软链接的绝对路径。
+EOF
+}
+
+fail() {
+  printf 'install-and-run: %s\n' "$*" >&2
+  exit 1
+}
+
+cleanup() {
+  if [ -n "$copy_dir" ]; then
+    rm -rf -- "$copy_dir"
+    copy_dir=""
+  fi
+  if [ -n "$stage_dir" ]; then
+    rm -rf -- "$stage_dir"
+    stage_dir=""
+  fi
+}
+trap cleanup EXIT
+
+while (($# > 0)); do
+  case "$1" in
+    --install-only)
+      install_only=true
+      shift
+      ;;
+    --port)
+      port="${2:?--port 需要端口号}"
+      shift 2
+      ;;
+    --yes)
+      assume_yes=true
+      shift
+      ;;
+    --help)
+      usage
+      exit 0
+      ;;
+    *)
+      printf 'install-and-run: 未知参数：%s\n' "$1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+case "$port" in
+  ''|*[!0-9]*) fail "端口必须是 1024 到 65535 之间的整数" ;;
+esac
+if ((port < 1024 || port > 65535)); then
+  fail "端口必须是 1024 到 65535 之间的整数"
+fi
+
+[ -n "$archive_path" ] \
+  || fail "维护者尚未在脚本顶部设置 PUBLIC_ARCHIVE_PATH"
+case "$archive_path" in
+  /*) ;;
+  *) fail "PUBLIC_ARCHIVE_PATH 必须是绝对路径：$archive_path" ;;
+esac
+archive_parent="${archive_path%/*}"
+[ -n "$archive_parent" ] || archive_parent=/
+public_settings_path="$archive_parent/settings.yaml"
+
+if [ "${DSH_HOME+x}" = x ]; then
+  planned_dsh_home="$DSH_HOME"
+else
+  planned_dsh_home="${XDG_DATA_HOME:-${HOME}/.local/share}/dsh-text-only"
+fi
+[ -n "$planned_dsh_home" ] || fail "DSH_HOME 不能为空"
+if [ ! -e "$planned_dsh_home/settings.yaml" ]; then
+  [ -f "$public_settings_path" ] \
+    || fail "无法读取公共配置文件：$public_settings_path"
+fi
+
+printf '\n%s\n' 'install-and-run: 即将执行以下操作：'
+printf '  1. 检查 Linux x86_64、glibc 2.17+ 和所需命令。\n'
+printf '  2. 从 %s 解析当前版本，安装或复用 ~/.local/ 下的版本目录。\n' "$archive_path"
+printf '  3. 创建 %s，并更新 ~/.local/bin/dsh 和 ~/.bashrc。\n' "$planned_dsh_home"
+printf '  4. 保留已有 settings.yaml、.env 和历史会话；缺少 settings.yaml 时从 %s 初始化。\n' \
+  "$public_settings_path"
+printf '  5. 验证 dsh 版本，并检查 Landlock 或 bubblewrap。\n'
+if $install_only; then
+  printf '  6. 验证完成后退出，不启动 Web 服务。\n\n'
+else
+  printf '  6. 在端口 %s 前台启动 Web 服务。\n\n' "$port"
+fi
+
+if $assume_yes; then
+  printf '%s\n' 'install-and-run: 已通过 --yes 确认，开始执行。'
+else
+  printf '%s' 'install-and-run: 确认继续吗？请输入 y，其他输入将取消：'
+  if ! IFS= read -r confirmation; then
+    printf '\n'
+    fail "未收到确认；请在终端中运行，自动化运行可使用 --yes"
+  fi
+  case "$confirmation" in
+    y|Y|yes|YES|是)
+      printf '%s\n' 'install-and-run: 已确认，开始执行。'
+      ;;
+    *)
+      printf '%s\n' 'install-and-run: 已取消，未执行任何安装或配置操作。'
+      exit 0
+      ;;
+  esac
+fi
+
+for required_command in awk chmod cp getconf grep head ln mkdir mktemp mv readlink rm rmdir sort tar touch uname; do
+  command -v "$required_command" >/dev/null 2>&1 \
+    || fail "缺少必需命令：$required_command"
+done
+
+if [ "$(uname -s)" != Linux ] || [ "$(uname -m)" != x86_64 ]; then
+  fail "只支持 Linux x86_64，当前为 $(uname -s) $(uname -m)"
+fi
+
+glibc_version="$(getconf GNU_LIBC_VERSION 2>/dev/null | awk '$1 == "glibc" { print $2 }')"
+if [ -z "$glibc_version" ]; then
+  fail "未检测到 glibc；musl 和私有 glibc 目录不受支持"
+fi
+minimum_glibc="$(printf '%s\n%s\n' 2.17 "$glibc_version" | sort -V | head -n 1)"
+if [ "$minimum_glibc" != 2.17 ]; then
+  fail "需要 glibc 2.17 或更高版本，当前为 glibc $glibc_version"
+fi
+
+resolved_archive="$(readlink -f -- "$archive_path" 2>/dev/null)" \
+  || fail "无法解析离线压缩包软链接：$archive_path"
+[ -f "$resolved_archive" ] || fail "无法读取离线压缩包：$resolved_archive"
+archive_name="${resolved_archive##*/}"
+case "$archive_name" in
+  dsh-offline-*-linux-x64-glibc217-text-only.tar.gz) ;;
+  *) fail "离线压缩包文件名不符合要求：$archive_name" ;;
+esac
+package_name="${archive_name%.tar.gz}"
+archive_version="${package_name#dsh-offline-}"
+archive_version="${archive_version%-linux-x64-glibc217-text-only}"
+[ -n "$archive_version" ] || fail "无法从离线压缩包文件名识别版本：$archive_name"
+archive_path="$resolved_archive"
+install_root="$install_parent/$package_name"
+
+installed=false
+if [ -e "$install_root" ]; then
+  [ -x "$install_root/bin/dsh" ] \
+    || fail "检测到不完整安装：$install_root；请先改名备份或删除该目录"
+  installed_version="$("$install_root/bin/dsh" --version 2>/dev/null)" \
+    || fail "已安装的 dsh 无法运行：$install_root/bin/dsh"
+  [ "$installed_version" = "$archive_version" ] \
+    || fail "安装目录版本异常：期望 $archive_version，实际 $installed_version"
+  installed=true
+  printf 'install-and-run: 已安装 dsh %s，跳过复制和解压\n' "$installed_version"
+else
+  copy_dir="$(mktemp -d "${TMPDIR:-/tmp}/dsh-offline-copy.XXXXXX")"
+  cp -- "$archive_path" "$copy_dir/$archive_name"
+  printf 'install-and-run: 已复制离线压缩包\n'
+
+  mkdir -p "$install_parent"
+  stage_dir="$(mktemp -d "$install_parent/.${package_name}.install.XXXXXX")"
+  tar --no-same-owner -xzf "$copy_dir/$archive_name" -C "$stage_dir"
+  [ -x "$stage_dir/$package_name/bin/dsh" ] \
+    || fail "归档中缺少可执行的 $package_name/bin/dsh"
+  extracted_version="$("$stage_dir/$package_name/bin/dsh" --version 2>/dev/null)" \
+    || fail "归档中的 dsh 无法运行"
+  [ "$extracted_version" = "$archive_version" ] \
+    || fail "归档版本异常：期望 $archive_version，实际 $extracted_version"
+  mv -T -- "$stage_dir/$package_name" "$install_root"
+  rmdir -- "$stage_dir"
+  stage_dir=""
+  installed=true
+  printf 'install-and-run: 已安装到 %s\n' "$install_root"
+fi
+
+[ "$installed" = true ] || fail "安装状态异常"
+mkdir -p "$user_bin"
+if { [ -e "$dsh_link" ] || [ -L "$dsh_link" ]; } && [ ! -L "$dsh_link" ]; then
+  fail "$dsh_link 已存在且不是软链接，请先处理该文件"
+fi
+ln -sfn "$install_root/bin/dsh" "$dsh_link"
+
+path_line='export PATH="${HOME}/.local/bin:${PATH}"'
+home_line='export DSH_HOME="${XDG_DATA_HOME:-${HOME}/.local/share}/dsh-text-only"'
+touch "${HOME}/.bashrc"
+grep -Fqx "$path_line" "${HOME}/.bashrc" \
+  || printf '%s\n' "$path_line" >>"${HOME}/.bashrc"
+
+if [ "${DSH_HOME+x}" = x ]; then
+  dsh_home="$DSH_HOME"
+else
+  dsh_home="${XDG_DATA_HOME:-${HOME}/.local/share}/dsh-text-only"
+  grep -Fqx "$home_line" "${HOME}/.bashrc" \
+    || printf '%s\n' "$home_line" >>"${HOME}/.bashrc"
+fi
+export PATH="$user_bin:$PATH"
+export DSH_HOME="$dsh_home"
+mkdir -p "$DSH_HOME"
+
+for config_name in settings.yaml .env; do
+  if [ -e "$DSH_HOME/$config_name" ] && [ ! -f "$DSH_HOME/$config_name" ]; then
+    fail "$DSH_HOME/$config_name 已存在但不是普通文件"
+  fi
+done
+if [ ! -e "$DSH_HOME/settings.yaml" ]; then
+  cp -- "$public_settings_path" "$DSH_HOME/settings.yaml"
+fi
+if [ ! -e "$DSH_HOME/.env" ]; then
+  cp -- "$install_root/config/dsh.env.example" "$DSH_HOME/.env"
+fi
+cp -- "$install_root/config/offline.cordis.yml" "$DSH_HOME/offline.cordis.yml"
+chmod 600 "$DSH_HOME/.env"
+
+reported_version="$("$dsh_link" --version)"
+[ "$reported_version" = "$archive_version" ] \
+  || fail "命令入口版本异常：期望 $archive_version，实际 $reported_version"
+printf 'install-and-run: dsh %s 验证通过\n' "$reported_version"
+
+landlock="$install_root/app/node_modules/@deepseek-ai/node-addon-landlock-run-linux-x64/bin/landlock-run"
+if landlock_result="$("$landlock" --probe 2>&1)"; then
+  printf 'install-and-run: %s\n' "$landlock_result"
+elif command -v bwrap >/dev/null 2>&1 \
+  && bwrap --ro-bind / / --dev /dev --unshare-pid --proc /proc --die-with-parent -- true >/dev/null 2>&1; then
+  printf '%s\n' 'install-and-run: 当前内核不支持 Landlock，将使用可用的 bubblewrap'
+else
+  printf '%s\n' 'install-and-run: 警告：Landlock 和 bubblewrap 均不可用；Web 与文字对话可启动，但本地 Bash 工具会拒绝运行' >&2
+fi
+
+if grep -q 'REPLACE_MODEL_' "$DSH_HOME/settings.yaml"; then
+  printf 'install-and-run: 提示：首次使用前请编辑 %s 和 %s\n' \
+    "$DSH_HOME/settings.yaml" "$DSH_HOME/.env" >&2
+fi
+
+if $install_only; then
+  printf '%s\n' 'install-and-run: 安装验证完成，未启动 Web 服务'
+  exit 0
+fi
+
+printf 'install-and-run: 正在启动 Web 服务，端口 %s\n' "$port"
+cleanup
+trap - EXIT
+exec "$dsh_link" web --patch "$DSH_HOME/offline.cordis.yml" --no-open --port "$port"

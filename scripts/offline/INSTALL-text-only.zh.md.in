@@ -1,0 +1,97 @@
+# DeepSeek Harness @DSH_VERSION@ 纯文字离线包安装
+
+## 目标机要求
+
+目标机需要 Linux `x86_64` 和 glibc 2.17 或更高版本，不支持 musl。先确认两条命令分别输出 `x86_64` 和不低于 `glibc 2.17` 的版本：
+
+```bash
+uname -m
+getconf GNU_LIBC_VERSION
+```
+
+离线包内置 Linux x64 `landlock-run`。输出 `fully enforced` 或 `partially enforced` 的内核可以直接使用 bash 等本地工具；输出 `not enforced by this kernel` 时需要目标机另行提供可用的 bubblewrap。Linux 3.10 内核早于 Landlock。纯聊天和 Web 启动不依赖这两种进程沙箱。
+
+## 一键安装并启动
+
+维护者将离线包放入共享文件系统目录，用固定软链接 `latest` 指向当前归档，在同一目录提供 `settings.yaml`，并在分发脚本前填写 `install-and-run.sh` 顶部的配置：
+
+```bash
+PUBLIC_ARCHIVE_PATH="/共享目录/dsh-offline/latest"
+```
+
+同事不需要填写任何路径，从任意目录使用 Bash 4 或更高版本运行脚本：
+
+```bash
+bash /公开目录/install-and-run.sh
+```
+
+不要使用 `sh install-and-run.sh`。脚本首先列出将执行的检查、安装、配置和启动操作，输入 `y` 确认后才开始；输入其他内容会直接退出且不修改文件。脚本会检查 Linux x64 和 glibc 版本；首次运行时将 `latest` 当前指向的归档复制到本机临时目录，安装到 `~/.local/`，初始化配置并验证 `dsh --version`；检测到相同版本已经完整安装时会跳过复制和解压，直接检查配置与沙箱并启动 Web 服务。`latest` 改指新版本后，再次运行会安装新版本并更新 `~/.local/bin/dsh`。已有的 `settings.yaml`、`.env` 和历史会话不会被覆盖，离线 patch 会刷新为当前包内版本。自动化运行可以显式添加 `--yes` 跳过确认。
+
+只安装和验证而不启动：
+
+```bash
+bash /公开目录/install-and-run.sh --install-only
+```
+
+更改 Web 端口：
+
+```bash
+bash /公开目录/install-and-run.sh --port 3081
+```
+
+脚本从维护者配置的 `PUBLIC_ARCHIVE_PATH` 解析归档，并从同一目录读取 `settings.yaml`。脚本本身不验证 SHA-256；维护者向用户开放归档前必须通过 Release 随附的 `.sha256` 文件完成校验。
+
+## 手动安装
+
+进入离线包和 `.sha256` 文件所在目录，然后执行：
+
+```bash
+set -euo pipefail
+
+PACKAGE="dsh-offline-@DSH_VERSION@-linux-x64-glibc217-text-only"
+
+sha256sum -c "${PACKAGE}.tar.gz.sha256"
+mkdir -p "${HOME}/.local/bin"
+tar -xzf "${PACKAGE}.tar.gz" -C "${HOME}/.local"
+ln -sfn "${HOME}/.local/${PACKAGE}/bin/dsh" "${HOME}/.local/bin/dsh"
+
+PATH_LINE='export PATH="${HOME}/.local/bin:${PATH}"'
+HOME_LINE='export DSH_HOME="${XDG_DATA_HOME:-${HOME}/.local/share}/dsh-text-only"'
+touch "${HOME}/.bashrc"
+grep -Fqx "${PATH_LINE}" "${HOME}/.bashrc" || printf '%s\n' "${PATH_LINE}" >>"${HOME}/.bashrc"
+grep -Fqx "${HOME_LINE}" "${HOME}/.bashrc" || printf '%s\n' "${HOME_LINE}" >>"${HOME}/.bashrc"
+
+export PATH="${HOME}/.local/bin:${PATH}"
+export DSH_HOME="${XDG_DATA_HOME:-${HOME}/.local/share}/dsh-text-only"
+mkdir -p "${DSH_HOME}"
+
+cd "${HOME}/.local/${PACKAGE}"
+[[ -e "${DSH_HOME}/settings.yaml" ]] || cp config/settings-openai-compatible.yaml.example "${DSH_HOME}/settings.yaml"
+[[ -e "${DSH_HOME}/.env" ]] || cp config/dsh.env.example "${DSH_HOME}/.env"
+cp config/offline.cordis.yml "${DSH_HOME}/offline.cordis.yml"
+chmod 600 "${DSH_HOME}/.env"
+
+dsh --version
+```
+
+如果 `dsh --version` 输出 `@DSH_VERSION@`，则安装成功。命令同时把 `PATH` 和 `DSH_HOME` 写入 `~/.bashrc`；已有的 `settings.yaml` 和 `.env` 不会被覆盖，`offline.cordis.yml` 会更新为当前包内版本。
+
+在支持 Landlock 的目标机上，可验证包内沙箱启动器：
+
+```bash
+"${HOME}/.local/${PACKAGE}/app/node_modules/@deepseek-ai/node-addon-landlock-run-linux-x64/bin/landlock-run" --probe
+```
+
+命令退出码为 `0` 且输出 `fully enforced` 或 `partially enforced` 时，bash 等本地工具可使用包内 Landlock 沙箱。输出 `not enforced by this kernel` 时，继续验证目标机上的 bubblewrap；两种沙箱均不可用时，Web 与文字对话仍可启动，但本地 Bash 工具会拒绝运行。
+
+## 配置内网模型
+
+将 `settings.yaml` 中的模型地址、端口、模型 id、上下文窗口和输出上限替换成内网服务的真实值。OpenAI 兼容 `baseURL` 通常为 `http://模型地址:端口/v1`，不要包含 `/chat/completions`。在 `.env` 中配置 `apiKeyEnv` 引用的变量；服务不校验密钥时也要保留非空占位值。
+
+## 启动
+
+```bash
+dsh web --patch "${DSH_HOME}/offline.cordis.yml" --no-open --port 3080
+```
+
+启动日志会打印带一次性 token 的完整 URL。在浏览器中打开该 URL 即可使用。

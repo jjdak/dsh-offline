@@ -1,0 +1,7 @@
+# 关闭需要访问公网的 DeepSeek Web Search 工具。
+- id: web-search-deepseek
+  name: '@deepseek-ai/dsh-web-search-deepseek'
+  disabled: true
+- id: tool-web
+  name: '@deepseek-ai/dsh-tool-web'
+  disabled: true
