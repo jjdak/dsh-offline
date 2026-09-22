@@ -612,15 +612,17 @@ sed "s|^PUBLIC_ARCHIVE_PATH=\"\"$|PUBLIC_ARCHIVE_PATH=\"$delivery_dir/latest\"|"
 bash -n "$work_root/smoke-install-and-run.sh"
 
 wrong_shell_log="$work_root/installer-wrong-shell.log"
-if sh "$work_root/smoke-install-and-run.sh" --help >"$wrong_shell_log" 2>&1; then
-  echo "build-text-only: installer accepted a non-Bash shell" >&2
-  exit 1
+if ! sh -c 'test -n "${BASH_VERSION:-}"'; then
+  if sh "$work_root/smoke-install-and-run.sh" --help >"$wrong_shell_log" 2>&1; then
+    echo "build-text-only: installer accepted a non-Bash shell" >&2
+    exit 1
+  fi
+  grep -F '请使用 Bash' "$wrong_shell_log" >/dev/null || {
+    cat "$wrong_shell_log" >&2
+    echo "build-text-only: installer did not explain its Bash requirement" >&2
+    exit 1
+  }
 fi
-grep -F '请使用 Bash' "$wrong_shell_log" >/dev/null || {
-  cat "$wrong_shell_log" >&2
-  echo "build-text-only: installer did not explain its Bash requirement" >&2
-  exit 1
-}
 
 env -u DSH_HOME -u XDG_DATA_HOME HOME="$installer_home" \
   bash "$work_root/smoke-install-and-run.sh" --install-only --yes
