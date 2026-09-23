@@ -32,7 +32,8 @@ usage() {
   cat <<EOF
 用法：bash install-and-run.sh [--install-only] [--port PORT] [--yes]
 
-从维护者配置的 latest 软链接安装并启动 DeepSeek Harness 纯文字离线版。
+从维护者配置的 latest 软链接安装并启动 DeepSeek Harness 离线版。
+支持 text-only 与 image-wasm，共用 ~/.local/share/dsh-text-only 数据目录。
 
 选项：
   --install-only  安装并验证，但不启动 Web 服务
@@ -170,15 +171,26 @@ resolved_archive="$(readlink -f -- "$archive_path" 2>/dev/null)" \
 [ -f "$resolved_archive" ] || fail "无法读取离线压缩包：$resolved_archive"
 archive_name="${resolved_archive##*/}"
 case "$archive_name" in
-  dsh-offline-*-linux-x64-glibc217-text-only.tar.gz) ;;
+  dsh-offline-*-linux-x64-glibc217-text-only.tar.gz) archive_profile=text-only ;;
+  dsh-offline-*-linux-x64-glibc217-image-wasm.tar.gz) archive_profile=image-wasm ;;
   *) fail "离线压缩包文件名不符合要求：$archive_name" ;;
 esac
 package_name="${archive_name%.tar.gz}"
 archive_version="${package_name#dsh-offline-}"
-archive_version="${archive_version%-linux-x64-glibc217-text-only}"
+archive_version="${archive_version%-linux-x64-glibc217-$archive_profile}"
 [ -n "$archive_version" ] || fail "无法从离线压缩包文件名识别版本：$archive_name"
 archive_path="$resolved_archive"
 install_root="$install_parent/$package_name"
+
+if [ "$archive_profile" = image-wasm ]; then
+  cpu_flags="$(grep -m1 '^flags' /proc/cpuinfo)" || fail "无法读取 CPU flags"
+  for cpu_flag in cx16 lahf_lm popcnt pni ssse3 sse4_1 sse4_2; do
+    case " $cpu_flags " in
+      *" $cpu_flag "*) ;;
+      *) fail "图片增强版要求 x86-64-v2；CPU 缺少 $cpu_flag，请使用 text-only 包" ;;
+    esac
+  done
+fi
 
 installed=false
 if [ -e "$install_root" ]; then
@@ -255,6 +267,9 @@ reported_version="$("$dsh_link" --version)"
 printf 'install-and-run: dsh %s 验证通过\n' "$reported_version"
 
 landlock="$install_root/app/node_modules/@deepseek-ai/node-addon-landlock-run-linux-x64/bin/landlock-run"
+if [ -x "$install_root/app/node_modules/@deepseek-ai/node-addon-system-linux-x64/bin/landlock-run" ]; then
+  landlock="$install_root/app/node_modules/@deepseek-ai/node-addon-system-linux-x64/bin/landlock-run"
+fi
 if landlock_result="$("$landlock" --probe 2>&1)"; then
   printf 'install-and-run: %s\n' "$landlock_result"
 elif command -v bwrap >/dev/null 2>&1 \

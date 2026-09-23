@@ -13,7 +13,7 @@ while (($# > 0)); do
       source_dir="${2:?--source needs a directory}"
       shift 2
       ;;
-    --node-runtime|--node-version|--out|--smoke-port)
+    --node-runtime|--node-version|--out|--smoke-port|--profile)
       shift 2
       ;;
     --help)
@@ -41,8 +41,11 @@ command -v docker >/dev/null || {
 }
 
 exec docker run --rm --init \
+  --network "${DSH_OFFLINE_DOCKER_NETWORK:-bridge}" \
   --entrypoint /bin/bash \
   --env DSH_OFFLINE_PYTHON=/opt/python/cp312-cp312/bin/python \
+  --env HTTP_PROXY --env HTTPS_PROXY --env NO_PROXY \
+  --env http_proxy --env https_proxy --env no_proxy \
   --volume "$repo_root:$repo_root" \
   --volume "$tool_root:$tool_root" \
   --workdir "$repo_root" \

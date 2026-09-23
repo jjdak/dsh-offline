@@ -1,0 +1,11 @@
+# DeepSeek Harness @DSH_VERSION@ Linux x64 图片增强离线包
+
+本版不含实验性语音输入、语音识别原生运行时或语音模型；图片附件功能保留。
+
+面向支持 x86-64-v2 的 CentOS 7 / glibc 2.17 环境，包含 Node.js 22 glibc217、生产依赖及经过校验的 `landlock-run`。保留上游图片附件服务和 Web 图片入口，sharp 使用固定版本的 WASM 后端，原生 sharp/libvips 包被排除。WASM SIMD 是本版的运行要求，旧 CPU 请使用 text-only 包。
+
+程序布局与 text-only 相同：`app/`、`node/`、`bin/`、`config/`、`data/`。共用 `install-and-run.sh`，默认数据目录仍是 `~/.local/share/dsh-text-only`，命令仍是 `~/.local/bin/dsh`。维护者通过不同的归档名称区分两种包。
+
+目标机安装和启动不需要联网、npm、pnpm、sudo 或 Docker。`node-pty` 在 glibc 2.17 环境重编，ELF 仍保持 `GLIBC_2.17`、`GLIBCXX_3.4.19`、`CXXABI_1.3.7` 上限，没有附带私有 glibc 或额外 C++ 运行库。`IMAGE-RUNTIME.json` 记录图片运行时版本与校验值，`ELF-AUDIT.txt` 记录 ELF 审计结果。
+
+Linux 3.10 需要目标机可用的 bubblewrap 才能运行本地工具；Web 与文字聊天不依赖该沙箱。图片附件能力不改变模型能力，文本模型仍只能配置文本输入。WASM 不等同于 sharp 全部原生功能；以随包说明和实际验证范围为准。参见配套 `INSTALL-image-wasm.zh.md`。

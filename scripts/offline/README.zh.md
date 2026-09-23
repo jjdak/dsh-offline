@@ -1,8 +1,8 @@
-# 纯文字 Linux 离线包
+# Linux 离线包
 
 [English](README.md) | 中文
 
-本目录用于构建自包含的 Linux x64 DeepSeek Harness 归档，适用于使用 glibc 2.17，且无法加载 `sharp` x86-64-v2 二进制文件及其 WebAssembly SIMD 后备实现的主机。归档支持文字会话和本地工具，但会主动拒绝图片附件。[离线构建器 Agent Note](../../.agents/notes/implemented/process/2026-08-25-text-only-offline-builder.zh.md)记录了这项打包决策。
+本目录用于构建 glibc 2.17 的自包含 Linux x64 DeepSeek Harness 归档。默认 `text-only` 模式支持基础 CPU，拒绝图片附件；独立的 `image-wasm` 模式保留上游图片附件能力，要求 x86-64-v2 和 WebAssembly SIMD。共同的兼容性与验证规则见[制作规范](../../OFFLINE.md)。
 
 ## 前置条件
 
@@ -15,6 +15,10 @@
 ```sh
 scripts/offline/build-text-only-container.sh --source /root/deepseek-harness
 ```
+
+环境二增加 `--profile image-wasm`，产物输出到 `.artifacts/offline/image-wasm/`。两种模式共用安装器、归档内部布局、`~/.local/bin/dsh` 入口，以及默认数据目录 `~/.local/share/dsh-text-only`。带版本号的程序目录以模式后缀区分。切换版本前应停止运行实例并备份数据；路径共用不代表数据格式支持降级。
+
+新版上游采用 `native/system` 布局时，构建器在 glibc 2.17 上重编文件锁模块及 Koffi，静态链接 C++ 并使用基础 CPU 参数；保留需要的 JavaScript 依赖，不应用下文旧版仅供 Windows 使用的 Koffi 排除逻辑。图片模式装入固定校验值的 sharp WASM 依赖，以图片处理验证替代纯文字拒绝验证。所有 ELF 符号上限保持不变。
 
 更新上游基线时，应先在产品源码仓库更新并提交，再运行构建器，确保 `BUILD-MANIFEST.txt` 指向打包的产品源码提交：
 

@@ -1,5 +1,6 @@
 /.artifacts/
 /.cache/
 /.pnpm-store/
+/tmp/dsh-offline-text.*/
 .env
 *.env

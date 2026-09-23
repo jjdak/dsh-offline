@@ -5,6 +5,8 @@ builder_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 tool_root="$(cd -- "$builder_dir/../.." && pwd -P)"
 repo_root=""
 out_dir="$tool_root/.artifacts/offline"
+profile="text-only"
+out_explicit=false
 node_runtime=""
 node_version="22.23.2"
 skip_install=false
@@ -24,10 +26,11 @@ usage() {
   cat <<'EOF'
 Usage: build-text-only.sh --source DIR [options]
 
-Build a glibc 2.17-compatible Linux x64 text-only DeepSeek Harness archive.
+Build a glibc 2.17-compatible Linux x64 DeepSeek Harness archive.
 
 Options:
   --source DIR        DeepSeek Harness source checkout (required)
+  --profile NAME      text-only (default) or image-wasm (environment two)
   --node-runtime DIR  copy an existing glibc 2.17-compatible Linux x64 Node distribution
   --node-version VER  Node release from unofficial-builds (default: 22.23.2)
   --out DIR           output directory (default: tool repository .artifacts/offline)
@@ -54,6 +57,10 @@ while (($# > 0)); do
       repo_root="${2:?--source needs a directory}"
       shift 2
       ;;
+    --profile)
+      profile="${2:?--profile needs a name}"
+      shift 2
+      ;;
     --node-runtime)
       node_runtime="${2:?--node-runtime needs a directory}"
       shift 2
@@ -64,6 +71,7 @@ while (($# > 0)); do
       ;;
     --out)
       out_dir="${2:?--out needs a directory}"
+      out_explicit=true
       shift 2
       ;;
     --skip-install)
@@ -97,6 +105,14 @@ while (($# > 0)); do
       ;;
   esac
 done
+
+case "$profile" in
+  text-only) ;;
+  image-wasm)
+    if ! $out_explicit; then out_dir="$out_dir/image-wasm"; fi
+    ;;
+  *) echo "build-text-only: unsupported profile: $profile" >&2; exit 2 ;;
+esac
 
 [[ -n "$repo_root" ]] || {
   echo "build-text-only: --source DIR is required" >&2
@@ -212,13 +228,27 @@ version="$($node_bin -p 'require(process.argv[1]).version' "$repo_root/apps/cli/
 commit="$(git -C "$repo_root" rev-parse HEAD)"
 source_epoch="$(git -C "$repo_root" show -s --format=%ct HEAD)"
 
+native_source="$repo_root/native/landlock-run"
+native_package="@deepseek-ai/node-addon-landlock-run-linux-x64"
+native_archive_prefix=node-addon-landlock-run-linux-x64
+native_system=false
+if [[ -f "$repo_root/native/system/packages/linux-x64/package.json" ]]; then
+  native_system=true
+  native_source="$repo_root/native/system"
+  native_package="@deepseek-ai/node-addon-system-linux-x64"
+  native_archive_prefix=node-addon-system-linux-x64
+  landlock_version=0.1.2
+  landlock_archive_sha512="$($node_bin -e 'console.log(Buffer.from(process.argv[1], "base64").toString("hex"))' \
+    'S2aPVHvYCpNCppCFyNlooMYuTB7ucK5lvD9oXQQ42v5Z2s5AoaiCdjz9r2l+ED2rI5oS1x0cUZmKjJH2dxV0pg==')"
+  landlock_download_base="https://registry.npmjs.org/$native_package/-"
+fi
 workspace_landlock_version="$($node_bin -p 'require(process.argv[1]).version' \
-  "$repo_root/native/landlock-run/packages/linux-x64/package.json")"
+  "$native_source/packages/linux-x64/package.json")"
 if [[ "$workspace_landlock_version" != "$landlock_version" ]]; then
   echo "build-text-only: landlock-run source version $workspace_landlock_version does not match pinned asset $landlock_version; update the offline asset URL and SHA-512" >&2
   exit 1
 fi
-landlock_archive="node-addon-landlock-run-linux-x64-$landlock_version.tgz"
+landlock_archive="$native_archive_prefix-$landlock_version.tgz"
 cached_landlock_archive="$cache_dir/$landlock_archive"
 if [[ ! -f "$cached_landlock_archive" ]]; then
   curl --fail --location --show-error \
@@ -231,12 +261,11 @@ if [[ "$actual_landlock_hash" != "$landlock_archive_sha512" ]]; then
   echo "build-text-only: landlock-run archive checksum mismatch: $cached_landlock_archive" >&2
   exit 1
 fi
-landlock_cache_dir="$cache_dir/landlock-run-linux-x64-$landlock_version"
+landlock_cache_dir="$cache_dir/$native_archive_prefix-$landlock_version"
 rm -rf -- "$landlock_cache_dir"
 mkdir -p "$landlock_cache_dir"
-tar --no-same-owner -xzf "$cached_landlock_archive" -C "$landlock_cache_dir" \
-  --strip-components=2 package/bin/landlock-run
-landlock_binary="$landlock_cache_dir/landlock-run"
+tar --no-same-owner -xzf "$cached_landlock_archive" -C "$landlock_cache_dir" --strip-components=1
+landlock_binary="$landlock_cache_dir/bin/landlock-run"
 if [[ ! -x "$landlock_binary" ]]; then
   echo "build-text-only: downloaded landlock-run is missing or not executable: $landlock_binary" >&2
   exit 1
@@ -262,6 +291,12 @@ if ! $skip_install; then
   # install hook either selects an x86-64-v2 prebuild or compiles with that ISA,
   # so run only the lifecycle hooks required by the Linux build and runtime.
   "${pnpm[@]}" --dir "$repo_root" rebuild esbuild protobufjs
+fi
+
+if $native_system; then
+  cc -std=c11 -O2 -Wall -Wextra -Werror -fPIC -fvisibility=hidden \
+    -DNAPI_VERSION=8 -I "$node_runtime/include/node" -shared \
+    -o "$landlock_cache_dir/bin/glibc/system.node" "$native_source/packages/entry/src/flock.c"
 fi
 
 node_pty_manifest="$($node_bin -e '
@@ -306,7 +341,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-package_name="dsh-offline-$version-linux-x64-glibc217-text-only"
+package_name="dsh-offline-$version-linux-x64-glibc217-$profile"
 stage="$work_root/stage/$package_name"
 mkdir -p "$stage"
 deployed="$work_root/deployed-app"
@@ -316,12 +351,17 @@ deployed="$work_root/deployed-app"
   --prefer-offline \
   --prod \
   --config.ignore-scripts=true \
-  --config.node-linker=hoisted \
+  --config.node-linker=isolated \
   --config.auto-install-peers=false \
+  --config.allow-unused-patches=true \
   --config.link-workspace-packages=true \
   "$deployed"
 
 "$node_bin" "$builder_dir/materialize-deploy.mjs" "$deployed" "$stage/app" "$repo_root"
+"$node_bin" "$builder_dir/exclude-voice.mjs" "$stage/app"
+if $native_system; then
+  "$node_bin" "$builder_dir/stage-internal-loader.mjs" "$stage/app"
+fi
 if find "$stage/app/node_modules" -type l -print -quit | grep -q .; then
   echo "build-text-only: materialized app still contains symbolic links" >&2
   exit 1
@@ -333,7 +373,7 @@ subprocess_package="$stage/app/node_modules/@deepseek-ai/dsh-subprocess-local"
 fs_package="$stage/app/node_modules/@deepseek-ai/dsh-fs-local"
 loader_package="$stage/app/node_modules/@deepseek-ai/cordis-plugin-loader"
 sandbox_local_package="$stage/app/node_modules/@deepseek-ai/dsh-sandbox-local"
-landlock_platform_package="$stage/app/node_modules/@deepseek-ai/node-addon-landlock-run-linux-x64"
+landlock_platform_package="$stage/app/node_modules/$native_package"
 staged_node_pty="$stage/app/node_modules/node-pty"
 if [[ ! -f "$attachment_package/lib/index.js" || ! -f "$web_bundle" \
   || ! -f "$subprocess_package/lib/index.js" || ! -f "$fs_package/package.json" \
@@ -344,10 +384,12 @@ if [[ ! -f "$attachment_package/lib/index.js" || ! -f "$web_bundle" \
   exit 1
 fi
 
-install -m 0644 "$builder_dir/text-only-attachment.js" "$attachment_package/lib/index.js"
-install -m 0644 "$builder_dir/text-only-attachment.d.ts" "$attachment_package/lib/types/index.d.ts"
+if [[ "$profile" == text-only ]]; then
+  install -m 0644 "$builder_dir/text-only-attachment.js" "$attachment_package/lib/index.js"
+  install -m 0644 "$builder_dir/text-only-attachment.d.ts" "$attachment_package/lib/types/index.d.ts"
+fi
 
-"$node_bin" --input-type=module - \
+DSH_OFFLINE_PROFILE="$profile" DSH_NATIVE_SYSTEM="$native_system" "$node_bin" --input-type=module - \
   "$attachment_package/package.json" \
   "$web_bundle" \
   "$subprocess_package/package.json" \
@@ -372,6 +414,7 @@ const [
 ]
   = process.argv.slice(2)
 const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+if (process.env.DSH_OFFLINE_PROFILE === 'text-only') {
 manifest.description = 'Text-only attachment service for the offline baseline-CPU package'
 delete manifest.dependencies?.sharp
 delete manifest.dependencies?.['@deepseek-ai/schemastery']
@@ -381,8 +424,10 @@ const webBundle = await readFile(webBundlePath, 'utf8')
 const row = "    - id: ui-attachment\n      name: '@deepseek-ai/dsh-client-ui-attachment'\n"
 if (!webBundle.includes(row)) throw new Error('ui-attachment row changed; refusing an unverified text-only package')
 await writeFile(webBundlePath, webBundle.replace(row, `${row}      disabled: true\n`))
+}
 
 const subprocessManifest = JSON.parse(await readFile(subprocessManifestPath, 'utf8'))
+if (process.env.DSH_NATIVE_SYSTEM !== 'true') {
 delete subprocessManifest.dependencies?.koffi
 await writeFile(subprocessManifestPath, `${JSON.stringify(subprocessManifest, null, 2)}\n`)
 
@@ -395,10 +440,13 @@ await writeFile(subprocessEntryPath, subprocessEntry.replace(
   koffiImport,
   'const koffi = { pointer: () => ({}) }; // Windows FFI is excluded from this Linux-only artifact.',
 ))
+}
 
 const fsManifest = JSON.parse(await readFile(fsManifestPath, 'utf8'))
+if (process.env.DSH_NATIVE_SYSTEM !== 'true') {
 delete fsManifest.dependencies?.koffi
 await writeFile(fsManifestPath, `${JSON.stringify(fsManifest, null, 2)}\n`)
+}
 
 for (const path of [appManifestPath, loaderManifestPath]) {
   const value = JSON.parse(await readFile(path, 'utf8'))
@@ -407,6 +455,7 @@ for (const path of [appManifestPath, loaderManifestPath]) {
   await writeFile(path, `${JSON.stringify(value, null, 2)}\n`)
 }
 
+if (process.env.DSH_NATIVE_SYSTEM !== 'true') {
 const sandboxManifest = JSON.parse(await readFile(sandboxManifestPath, 'utf8'))
 delete sandboxManifest.dependencies?.['@deepseek-ai/dsh-sandbox-windows-acl']
 await writeFile(sandboxManifestPath, `${JSON.stringify(sandboxManifest, null, 2)}\n`)
@@ -422,27 +471,40 @@ const assertTempRootOutsideWorkspace = windowsAclUnavailable;
 const tempWriteSid = windowsAclUnavailable;
 const workspaceWriteSid = windowsAclUnavailable;`
 await writeFile(sandboxEntryPath, sandboxEntry.replace(windowsAclImport, windowsAclStub))
+}
 NODE
 
-rm -rf -- \
+if [[ "$profile" == text-only ]]; then
+  rm -rf -- \
   "$stage/app/node_modules/sharp" \
   "$stage/app/node_modules/@img/sharp-linux-x64" \
   "$stage/app/node_modules/@img/sharp-libvips-linux-x64" \
   "$stage/app/node_modules/@img/sharp-wasm32" \
   "$stage/app/node_modules/@img/colour" \
   "$stage/app/node_modules/@emnapi/runtime"
+else
+  "$node_bin" "$builder_dir/stage-image-wasm.mjs" "$stage/app" "$cache_dir"
+fi
 
-find "$stage/app/node_modules" -depth -type d \
-  \( -name koffi -o -path '*/@koromix/koffi-*' \) -exec rm -rf -- {} +
+if $native_system; then
+  "$node_bin" "$builder_dir/stage-koffi.mjs" "$stage/app"
+fi
+
+if ! $native_system; then
+  find "$stage/app/node_modules" -depth -type d \
+    \( -name koffi -o -path '*/@koromix/koffi-*' \) -exec rm -rf -- {} +
+fi
 find "$stage/app/node_modules" -depth -type d \
   \( -name node-addon-require-builtin -o -name 'node-addon-require-builtin-*' \
     -o -name node-addon-native-custom-loader \) -exec rm -rf -- {} +
-rm -rf -- \
-  "$stage/app/node_modules/@deepseek-ai/dsh-sandbox-windows-acl" \
-  "$stage/app/node_modules/@deepseek-ai/dsh-win32-process"
+if ! $native_system; then
+  rm -rf -- \
+    "$stage/app/node_modules/@deepseek-ai/dsh-sandbox-windows-acl" \
+    "$stage/app/node_modules/@deepseek-ai/dsh-win32-process"
+fi
 mkdir -p "$landlock_platform_package/bin"
-install -m 0755 "$landlock_binary" "$landlock_platform_package/bin/landlock-run"
-"$node_bin" "$repo_root/native/landlock-run/scripts/verify-launcher-binary.mjs" \
+cp -a "$landlock_cache_dir/bin/." "$landlock_platform_package/bin/"
+"$node_bin" "$native_source/scripts/verify-launcher-binary.mjs" \
   "$landlock_platform_package"
 if ! landlock_probe="$($landlock_platform_package/bin/landlock-run --probe 2>&1)"; then
   echo "$landlock_probe" >&2
@@ -465,15 +527,32 @@ install -m 0644 "$builder_dir/dsh.env.example" "$stage/config/dsh.env.example"
 install -m 0644 "$repo_root/LICENSE" "$stage/LICENSE"
 install -m 0644 "$repo_root/THIRD_PARTY_NOTICES.md" "$stage/THIRD_PARTY_NOTICES.md"
 
-sed "s/@DSH_VERSION@/$version/g" "$builder_dir/README.zh.md.in" >"$stage/README.zh.md"
+readme_template="$builder_dir/README.zh.md.in"
+attachment_backend=text-only
+sharp_runtime=absent
+cpu_baseline=x86-64
+wasm_simd=not-required
+koffi_runtime=absent
+if $native_system; then koffi_runtime=glibc217-source; fi
+if [[ "$profile" == image-wasm ]]; then
+  readme_template="$builder_dir/README-image-wasm.zh.md.in"
+  attachment_backend=upstream-local
+  sharp_runtime=wasm32
+  cpu_baseline=x86-64-v2
+  wasm_simd=required
+fi
+sed "s/@DSH_VERSION@/$version/g" "$readme_template" >"$stage/README.zh.md"
 cat >"$stage/BUILD-MANIFEST.txt" <<EOF
 dsh_version=$version
 git_commit=$commit
-target=linux-x64-glibc217-text-only
+target=linux-x64-glibc217-$profile
+cpu_baseline=$cpu_baseline
+wasm_simd=$wasm_simd
 node_version=$node_version
 node_archive=${node_archive:-external-runtime}
 node_archive_sha256=$node_archive_hash
 landlock_run_version=$landlock_version
+native_platform_package=$native_package
 landlock_run_archive_sha512=$actual_landlock_hash
 landlock_run_probe=$landlock_probe
 pnpm_build_version=$("${pnpm[@]}" --version)
@@ -481,15 +560,16 @@ build_glibc=$build_glibc
 maximum_glibc=$max_glibc
 maximum_glibcxx=$max_glibcxx
 maximum_cxxabi=$max_cxxabi
-attachment_backend=text-only
-sharp_runtime=absent
-koffi_runtime=absent
+attachment_backend=$attachment_backend
+sharp_runtime=$sharp_runtime
+voice_input=excluded
+koffi_runtime=$koffi_runtime
 require_builtin_runtime=expose-internals
 node_pty_build=glibc217-source
 archive_hardlinks=none
 EOF
 
-if find "$stage/app/node_modules" -maxdepth 2 \( -path '*/sharp' -o -path '*/@img/sharp-*' \) -print -quit | grep -q .; then
+if [[ "$profile" == text-only ]] && find "$stage/app/node_modules" -maxdepth 2 \( -path '*/sharp' -o -path '*/@img/sharp-*' \) -print -quit | grep -q .; then
   echo "build-text-only: sharp runtime remains in the staged package" >&2
   exit 1
 fi
@@ -562,8 +642,8 @@ if [[ "$reported_version" != "$version" ]]; then
   exit 1
 fi
 
-verified_landlock_package="$verified/app/node_modules/@deepseek-ai/node-addon-landlock-run-linux-x64"
-"$verified/node/bin/node" "$repo_root/native/landlock-run/scripts/verify-launcher-binary.mjs" \
+verified_landlock_package="$verified/app/node_modules/$native_package"
+"$verified/node/bin/node" "$native_source/scripts/verify-launcher-binary.mjs" \
   "$verified_landlock_package"
 if ! verified_landlock_probe="$($verified_landlock_package/bin/landlock-run --probe 2>&1)"; then
   echo "$verified_landlock_probe" >&2
@@ -571,7 +651,12 @@ if ! verified_landlock_probe="$($verified_landlock_package/bin/landlock-run --pr
   exit 1
 fi
 
-DSH_APP="$verified/app" "$verified/node/bin/node" --input-type=module <<'NODE'
+if $native_system; then
+  "$verified/node/bin/node" --expose-internals "$builder_dir/verify-native-runtime.mjs" "$verified/app"
+fi
+
+if [[ "$profile" == text-only ]]; then
+  DSH_APP="$verified/app" "$verified/node/bin/node" --input-type=module <<'NODE'
 const { Context } = await import(`${process.env.DSH_APP}/node_modules/@deepseek-ai/cordis/lib/index.js`)
 const { default: Store } = await import(`${process.env.DSH_APP}/node_modules/@deepseek-ai/dsh-attachment-local/lib/index.js`)
 
@@ -584,6 +669,9 @@ try {
   if (error?.code !== 'UNSUPPORTED_IMAGE_TYPE') throw error
 }
 NODE
+else
+  "$verified/node/bin/node" --expose-internals "$builder_dir/verify-image-wasm.mjs" "$verified/app"
+fi
 
 web_log="$work_root/dsh-web.log"
 delivery_dir="$work_root/delivery"
@@ -672,13 +760,13 @@ final_installer="$out_dir/install-and-run.sh"
 mv -f "$delivery_dir/$package_name.tar.gz" "$final_archive"
 mv -f "$delivery_dir/$package_name.tar.gz.sha256" "$final_checksum"
 mv -f "$delivery_dir/install-and-run.sh" "$final_installer"
-sed "s/@DSH_VERSION@/$version/g" "$builder_dir/INSTALL-text-only.zh.md.in" >"$out_dir/INSTALL-text-only.zh.md"
+sed "s/@DSH_VERSION@/$version/g" "$builder_dir/INSTALL-$profile.zh.md.in" >"$out_dir/INSTALL-$profile.zh.md"
 
 echo "build-text-only: complete"
 echo "  archive: $final_archive"
 echo "  checksum: $final_checksum"
 echo "  installer: $final_installer"
-echo "  tutorial: $out_dir/INSTALL-text-only.zh.md"
+echo "  tutorial: $out_dir/INSTALL-$profile.zh.md"
 echo "  hard_link_entries: $hard_link_entries"
 echo "  elf_entries: $elf_count"
 echo "  landlock_probe: $verified_landlock_probe"

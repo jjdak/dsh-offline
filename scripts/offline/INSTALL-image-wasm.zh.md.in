@@ -1,0 +1,59 @@
+# DeepSeek Harness @DSH_VERSION@ 图片增强离线包安装
+
+按交付范围排除实验性语音输入及其原生运行时和模型，保留图片附件能力。
+
+## 环境要求
+
+Linux x86_64、glibc 2.17 或更高版本、支持 x86-64-v2 的 CPU、Bash 4 或更高版本。本包面向环境二，图片处理使用 sharp WASM 与 WASM SIMD。安装脚本检查 v2 所需的七项 CPU flags。不支持 v2 的服务器请使用 text-only 包。
+
+Linux 3.10 不能使用 Landlock，本地 Bash 等工具仍需要目标机提供可用的 bubblewrap。Web 启动和文字聊天不依赖进程沙箱。容器构建验证的是旧用户态，不能代替目标机 3.10 内核下的沙箱验收。
+
+## 共用安装方式
+
+与环境一共用同一份 `install-and-run.sh`，文件布局与数据路径一致：
+
+```text
+~/.local/
+  bin/dsh -> ../dsh-offline-@DSH_VERSION@-linux-x64-glibc217-image-wasm/bin/dsh
+  dsh-offline-@DSH_VERSION@-linux-x64-glibc217-image-wasm/
+    app/  node/  bin/  config/  data/
+  share/dsh-text-only/
+    settings.yaml  .env  offline.cordis.yml  （会话及附件等用户数据）
+```
+
+程序版本目录名称区分 text-only 和 image-wasm，防止同版本两种产物被误判为同一个安装；其内部布局、命令路径、默认数据目录完全沿用环境一。设置了 `DSH_HOME` 或 `XDG_DATA_HOME` 时，两种包也沿用相同的覆盖规则。已有配置及会话会保留，但不同产品版本的会话格式不保证可向旧版降级；切换前停止正在运行的实例并备份数据。
+
+维护者校验 Release 随附文件：
+
+```bash
+sha256sum -c dsh-offline-@DSH_VERSION@-linux-x64-glibc217-image-wasm.tar.gz.sha256
+```
+
+随后在共享目录用 `latest` 软链接指向该归档，并在同目录提供 `settings.yaml`。在分发 `install-and-run.sh` 前填写脚本顶部：
+
+```bash
+PUBLIC_ARCHIVE_PATH="/共享目录/dsh-offline/latest"
+```
+
+用户使用 Bash 运行脚本，确认后安装并启动：
+
+```bash
+bash /公开目录/install-and-run.sh
+```
+
+仅安装验证或更换端口：
+
+```bash
+bash /公开目录/install-and-run.sh --install-only
+bash /公开目录/install-and-run.sh --port 3081
+```
+
+脚本保留已有 `settings.yaml`、`.env` 和会话，刷新离线 patch；重复安装相同产物会复用程序目录。脚本本身不校验归档 SHA-256，维护者必须在开放共享归档前完成校验。环境一、环境二使用不同归档时，各自的公共 `latest` 应指向对应产物。
+
+## 模型与功能验证
+
+在 `~/.local/share/dsh-text-only/settings.yaml` 配置内网 API 与模型，在该目录 `.env` 填入所引用的密钥。程序包不包含真实凭据。模型仅支持文本时，只声明文本输入；图片处理能力不会使该模型获得图片理解能力。
+
+构建器检查 PNG/JPEG/WebP/GIF 的生成、附件接收、缩放、存储、读取和请求图片变体，以及 EXIF 旋转、损坏图片拒绝、Web 图片入口配置。它还检查 CLI、ELF、安装重复运行和带认证 Web 启动。真实模型 API、多模态响应和目标机内核需另行验收。sharp WASM 不支持原生文字渲染与瓦片输出等全部原生能力。
+
+安装完成后，运行 `~/.local/bin/dsh --version` 应输出 `@DSH_VERSION@`。确认 Web 页面及文字会话正常；本地工具必须实际完成一次沙箱内文件读写；图片上传应在支持图片的模型配置下验证。启动日志会打印带一次性 token 的 Web URL。

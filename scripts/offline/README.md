@@ -1,8 +1,8 @@
-# Text-only Linux offline bundle
+# Linux offline bundles
 
 English | [中文](README.zh.md)
 
-This directory builds a self-contained Linux x64 DeepSeek Harness archive for glibc 2.17 hosts that cannot load the `sharp` x86-64-v2 binary or its WebAssembly SIMD fallback. The archive supports text conversations and local tools but intentionally rejects image attachments. The [offline-builder Agent Note](../../.agents/notes/implemented/process/2026-08-25-text-only-offline-builder.md) records the packaging decision.
+This directory builds self-contained Linux x64 DeepSeek Harness archives for glibc 2.17. The default `text-only` profile supports baseline CPUs and rejects image attachments. The separate `image-wasm` profile preserves upstream image attachments and requires x86-64-v2 and WebAssembly SIMD. See [packaging requirements](../../OFFLINE.md) for the shared compatibility and verification rules.
 
 ## Prerequisites
 
@@ -15,6 +15,10 @@ Pass the separate DeepSeek Harness source checkout to the container builder:
 ```sh
 scripts/offline/build-text-only-container.sh --source /root/deepseek-harness
 ```
+
+Add `--profile image-wasm` for environment two. Its outputs go to `.artifacts/offline/image-wasm/`. Both profiles use the same installer and archive layout, the same `~/.local/bin/dsh` entry point, and the same default data directory `~/.local/share/dsh-text-only`. Their versioned program directories have distinct profile suffixes. Stop the running instance and back up data before switching versions; shared paths do not guarantee downgrade compatibility.
+
+For modern upstream `native/system` layouts, the builder recompiles the file-lock module and Koffi on glibc 2.17, with static C++ linkage and baseline CPU flags. It retains required JavaScript dependencies instead of applying the legacy Windows-only Koffi removal described below. The image profile installs checksum-pinned sharp WASM dependencies and verifies image processing instead of text-only rejection. All ELF symbol ceilings still apply.
 
 For a new upstream baseline, update and commit the product source checkout before running the builder so that `BUILD-MANIFEST.txt` names the packaged source commit:
 

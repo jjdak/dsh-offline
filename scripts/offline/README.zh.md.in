@@ -1,5 +1,7 @@
 # DeepSeek Harness @DSH_VERSION@ Linux x64 纯文字离线包
 
+本离线版不包含实验性语音输入及其原生识别运行时和模型。
+
 本包从对应 Git 提交的官方源码构建，包含生产依赖、兼容 glibc 2.17 的 Node.js 22 运行时，以及经过 SHA-512 校验的 Linux x64 `landlock-run`。目标机需要 Linux x86_64 与 glibc 2.17，不需要 musl，也不需要另行指定 glibc 2.35。安装和启动不需要 npm、pnpm、互联网、sudo 或 QEMU。本版在离线产物阶段装配纯文字附件服务，不修改官方源码；它不包含 `sharp`、原生图片库或 WASM 图片后端，Web 图片入口也已停用。
 
 归档不含硬链接，可解压到不能创建硬链接的共享目录。`node-pty` 已针对 glibc 2.17 从源码重编，Windows-only 原生包已排除。支持 Landlock 的内核可直接运行受限本地工具；Linux 3.10 等早期内核仍需目标机提供 bubblewrap。`ELF-AUDIT.txt` 记录包内所有 ELF 的最高 glibc、libstdc++ 与 CXXABI 符号版本。完整安装、内网模型配置和验证步骤见配套 `INSTALL-text-only.zh.md`。
