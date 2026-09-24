@@ -42,6 +42,10 @@ scripts/offline/build-text-only-container.sh --source /root/deepseek-harness
 
 ## 验证范围
 
+新版产品启动时会将 `settings.yaml` 改名为 `settings.yaml.imported`，并尝试逐项导入当前 profile 的 `cordis.patch.yml`。安装器在任一文件存在时均不得重新复制公共配置；保留 `.imported`，不要通过改名触发重复导入。导入失败项需查看启动日志，`.imported` 存在不代表全部成功。迁移后通过 Web 设置管理配置。
+
+共享安装器回归使用 `node scripts/offline/verify-installer-upgrade.mjs OLD_ARCHIVE NEW_ARCHIVE`，覆盖首次/重复安装、升级，以及模拟迁移后公共配置存在/缺失两种情况，确保不重新生成 `settings.yaml`、不修改 profile 和用户数据。
+
 修改构建脚本、运行时输入或包内容时，只运行离线包相关检查：
 
 ```bash

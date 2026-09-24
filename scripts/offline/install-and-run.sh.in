@@ -111,7 +111,16 @@ else
   planned_dsh_home="${XDG_DATA_HOME:-${HOME}/.local/share}/dsh-text-only"
 fi
 [ -n "$planned_dsh_home" ] || fail "DSH_HOME 不能为空"
-if [ ! -e "$planned_dsh_home/settings.yaml" ]; then
+# The product renames legacy settings before importing them into the profile.
+# Never seed them again: doing so can overwrite subsequent profile edits.
+needs_public_settings() {
+  [ ! -e "$1/settings.yaml" ] && [ ! -e "$1/settings.yaml.imported" ]
+}
+if [ -e "$planned_dsh_home/settings.yaml.imported" ] || [ -L "$planned_dsh_home/settings.yaml.imported" ]; then
+  [ -f "$planned_dsh_home/settings.yaml.imported" ] \
+    || fail "$planned_dsh_home/settings.yaml.imported 已存在但不是普通文件"
+fi
+if needs_public_settings "$planned_dsh_home"; then
   [ -f "$public_settings_path" ] \
     || fail "无法读取公共配置文件：$public_settings_path"
 fi
@@ -120,7 +129,7 @@ printf '\n%s\n' 'install-and-run: 即将执行以下操作：'
 printf '  1. 检查 Linux x86_64、glibc 2.17+ 和所需命令。\n'
 printf '  2. 从 %s 解析当前版本，安装或复用 ~/.local/ 下的版本目录。\n' "$archive_path"
 printf '  3. 创建 %s，并更新 ~/.local/bin/dsh 和 ~/.bashrc。\n' "$planned_dsh_home"
-printf '  4. 保留已有 settings.yaml、.env 和历史会话；缺少 settings.yaml 时从 %s 初始化。\n' \
+printf '  4. 保留已有配置、迁移记录、.env 和历史会话；settings.yaml 与 settings.yaml.imported 均不存在时从 %s 初始化。\n' \
   "$public_settings_path"
 printf '  5. 验证 dsh 版本，并检查 Landlock 或 bubblewrap。\n'
 if $install_only; then
@@ -252,7 +261,7 @@ for config_name in settings.yaml .env; do
     fail "$DSH_HOME/$config_name 已存在但不是普通文件"
   fi
 done
-if [ ! -e "$DSH_HOME/settings.yaml" ]; then
+if needs_public_settings "$DSH_HOME"; then
   cp -- "$public_settings_path" "$DSH_HOME/settings.yaml"
 fi
 if [ ! -e "$DSH_HOME/.env" ]; then
@@ -279,7 +288,7 @@ else
   printf '%s\n' 'install-and-run: 警告：Landlock 和 bubblewrap 均不可用；Web 与文字对话可启动，但本地 Bash 工具会拒绝运行' >&2
 fi
 
-if grep -q 'REPLACE_MODEL_' "$DSH_HOME/settings.yaml"; then
+if [ -f "$DSH_HOME/settings.yaml" ] && grep -q 'REPLACE_MODEL_' "$DSH_HOME/settings.yaml"; then
   printf 'install-and-run: 提示：首次使用前请编辑 %s 和 %s\n' \
     "$DSH_HOME/settings.yaml" "$DSH_HOME/.env" >&2
 fi

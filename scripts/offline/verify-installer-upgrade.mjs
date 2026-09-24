@@ -1,6 +1,6 @@
 // Run only against trusted archives. All installations use a disposable HOME.
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, writeFile, mkdir, symlink, readlink, unlink, rm, realpath } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, mkdir, symlink, readlink, unlink, rm, realpath, rename, lstat } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { basename, dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -45,6 +45,23 @@ try {
     assert.equal(await readlink(join(home, '.local/bin/dsh')), join(home, '.local', basename(archive, '.tar.gz'), 'bin/dsh'));
   }
   console.log('PASS: initial/repeated install and upgrade preserve settings, dummy env and session marker');
+  // Reproduce the on-disk state after the product's legacy import, then test
+  // with and without a public seed. This is not a test of the importer itself.
+  await rename(join(data, 'settings.yaml'), join(data, 'settings.yaml.imported'));
+  const profileDir = join(data, 'profiles', 'migration-test');
+  await mkdir(profileDir, { recursive: true });
+  const profilePath = join(profileDir, 'cordis.patch.yml');
+  const profileValue = '# user-edited profile must survive installation\n[]\n';
+  await writeFile(profilePath, profileValue);
+  for (const publicSeed of [true, false]) {
+    if (!publicSeed) await unlink(join(work, 'settings.yaml'));
+    execFileSync('bash', [installer, '--yes', '--install-only'], { env, stdio: 'inherit' });
+    await assert.rejects(lstat(join(data, 'settings.yaml')), { code: 'ENOENT' });
+    assert.equal(await readFile(join(data, 'settings.yaml.imported'), 'utf8'), markers['settings.yaml']);
+    assert.equal(await readFile(profilePath, 'utf8'), profileValue);
+    for (const name of ['.env', 'session-sentinel']) assert.equal(await readFile(join(data, name), 'utf8'), markers[name]);
+  }
+  console.log('PASS: migrated settings are not recreated; profile preserved with/without public seed');
 } finally {
   await rm(work, { recursive: true, force: true });
 }
