@@ -1,6 +1,6 @@
 # 环境二：支持 x86-64-v2 的 CentOS 7 服务器调研
 
-最新交付：[0.1.7-alpha.2 图片增强无语音版](https://github.com/jjdak/dsh-offline/releases/tag/dsh-v0.1.7-alpha.2-image-wasm.1)，源码 `00102833dfaee1da9f48a3a8eae9d34005a75218`。复用 alpha.1 的全部适配脚本与固定运行时输入，重新完成完整容器构建、归档审计、安装与 Web 验证，并通过最终归档的断网 CentOS 7 检查。alpha.1 仍保留；以下包含原始调研与首次适配记录。
+最新交付：[0.1.7-rc.1 图片增强无语音版](https://github.com/jjdak/dsh-offline/releases/tag/dsh-v0.1.7-rc.1-image-wasm.1)，源码 `46a7f68b0922371ce7144b668b90e377d8e799f4`。全部复用既有适配脚本与固定运行时，通过完整容器构建、归档审计、安装与 Web 验证及最终归档的断网 CentOS 7 检查。7 个 ELF 均满足上限，安装布局与数据路径不变。alpha.1、alpha.2 仍保留；以下包含原始调研与首次适配记录。真实 3.10 内核及模型 API 仍需现场验收。
 
 升级提醒：有自定义 `spill-policy.maxInlineBytes` 配置时，需要改为 `maxInlineTokens` 并按 token 重设预算。本仓库安装模板未设置此项；共享数据路径不变，升级前仍应停止旧实例并备份数据。
 

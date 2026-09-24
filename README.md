@@ -19,4 +19,4 @@
 - [环境一：现有仓库的基础 CPU 纯文字离线包](docs/environment-a-text-only.zh.md)：不支持 x86-64-v2 的目标环境及现有交付边界。
 - [环境二：支持 x86-64-v2 的 CentOS 7 图片增强包](docs/environment-b-centos7-wasm.zh.md)：原始调研、独立实施与验证记录；保留图片，按用户要求排除实验性语音输入。
 
-环境二 `0.1.7-alpha.2` 交付入口：[GitHub Release](https://github.com/jjdak/dsh-offline/releases/tag/dsh-v0.1.7-alpha.2-image-wasm.1)。下载归档、校验文件、安装脚本及中文说明；真实 Linux 3.10 沙箱与模型网关仍需目标机验收。此前的 alpha.1 Release 保留。
+环境二 `0.1.7-rc.1` 交付入口：[GitHub Release](https://github.com/jjdak/dsh-offline/releases/tag/dsh-v0.1.7-rc.1-image-wasm.1)。下载归档、校验文件、安装脚本及中文说明；真实 Linux 3.10 沙箱与模型网关仍需目标机验收。此前的 alpha.1、alpha.2 Release 保留。
