@@ -1,5 +1,9 @@
 # 环境二：支持 x86-64-v2 的 CentOS 7 服务器调研
 
+最新交付：[0.1.7-alpha.2 图片增强无语音版](https://github.com/jjdak/dsh-offline/releases/tag/dsh-v0.1.7-alpha.2-image-wasm.1)，源码 `00102833dfaee1da9f48a3a8eae9d34005a75218`。复用 alpha.1 的全部适配脚本与固定运行时输入，重新完成完整容器构建、归档审计、安装与 Web 验证，并通过最终归档的断网 CentOS 7 检查。alpha.1 仍保留；以下包含原始调研与首次适配记录。
+
+升级提醒：有自定义 `spill-policy.maxInlineBytes` 配置时，需要改为 `maxInlineTokens` 并按 token 重设预算。本仓库安装模板未设置此项；共享数据路径不变，升级前仍应停止旧实例并备份数据。
+
 本文说明另一台低版本内网服务器的适配调研。它不是现有 `text-only` 包原先面向的、不支持 x86-64-v2 的环境；本调研不修改现有包的兼容性承诺。
 
 资料来源为用户保存的《调研 CentOS 7 兼容性》HTML 对话，整理日期为 2026-09-22。原始分享链接：<https://chatgpt.com/s/cx_6ab1f7ddd5888191ac0a192559df0956>。以下实测结果均为该对话记录中的报告，尚未在本仓库独立复现；HTML 没有包含其另附可行性报告的完整补丁和测试日志。
