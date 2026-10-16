@@ -37,6 +37,7 @@
 - 单独 `--version` 不足以覆盖启动链，必须实际启动带认证 Web 并执行原生、图片检查。
 - sherpa-onnx 的原生依赖超出旧系统能力；本任务按明确需求排除语音，不随升级悄悄恢复。
 - 小内存构建机曾发生 TypeScript OOM。应安排足够内存，必要时由维护者管理临时 swap；验证工具不自动修改宿主 swap。
+- 容器代理地址指向宿主回环地址时，默认 bridge 网络无法访问；可用 `DSH_OFFLINE_DOCKER_NETWORK=host` 运行构建入口。最终 CentOS 7 验证仍使用断网模式。
 - 构建日志存入忽略目录 `.cache/dsh-offline/`，不要仅放 `/tmp` 或依赖终端历史。
 
 ## 下一版操作清单
@@ -59,7 +60,7 @@
    node scripts/offline/verify-installer-upgrade.mjs /path/to/old.tar.gz /path/to/new.tar.gz
    ```
 
-   实际文件名须保持 `dsh-offline-<version>-linux-x64-glibc217-<profile>.tar.gz`。CentOS 工具当前面向 0.1.7 系列 image-wasm；其他版本先检查验证器适配性。镜像固定为 `centos@sha256:be65f488b7764ad3638f236b7b515b3678369a5124c47b8d32916d6487418ea4`，需提前加载；工具使用 `--pull never --network none`，不自动下载、不发布端口。构建机内核须支持验证器使用的 Landlock。安装工具需要 Linux x64、Node、Bash、SHA-256 工具及足够临时空间；只在自建临时 HOME 写入模拟数据，结束后清理。
+   实际文件名须保持 `dsh-offline-<version>-linux-x64-glibc217-<profile>.tar.gz`。CentOS 工具接受版本化 image-wasm 归档；更新产品时仍须检查验证器使用的原生和图片 API。镜像固定为 `centos@sha256:be65f488b7764ad3638f236b7b515b3678369a5124c47b8d32916d6487418ea4`，需提前加载；工具使用 `--pull never --network none`，不自动下载、不发布端口。构建机内核须支持验证器使用的 Landlock。安装工具需要 Linux x64、Node、Bash、SHA-256 工具及足够临时空间；只在自建临时 HOME 写入模拟数据，结束后清理。
 
 4. 全部通过后按 OFFLINE.md 发布四项 Release 资产，先检查上传状态、归档摘要和安装器语法，再宣布交付。不要把生成物强制加入 Git；本次仅归档验证工具，无需重新发布旧包。
 

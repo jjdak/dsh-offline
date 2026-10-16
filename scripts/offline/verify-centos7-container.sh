@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# Test trusted 0.1.7 image-wasm release archives, without network or real user data.
+# Test trusted image-wasm release archives, without network or real user data.
 set -euo pipefail
 
 if [[ ${1:-} != --inside ]]; then
   if [[ $# != 1 || ${1:-} == --help ]]; then
-    echo "Usage: bash $0 ARCHIVE.tar.gz (0.1.7 image-wasm; Docker required)"
+    echo "Usage: bash $0 ARCHIVE.tar.gz (image-wasm; Docker required)"
     [[ ${1:-} == --help ]] && exit 0
     exit 2
   fi
   archive=$(realpath -- "$1")
   name=$(basename -- "$archive")
-  [[ $name =~ ^dsh-offline-0\.1\.7[^/]*-linux-x64-glibc217-image-wasm\.tar\.gz$ ]] || {
-    echo 'Expected a 0.1.7 image-wasm archive' >&2; exit 2;
+  [[ $name =~ ^dsh-offline-[0-9]+\.[0-9]+\.[0-9]+(-[[:alnum:].-]+)?-linux-x64-glibc217-image-wasm\.tar\.gz$ ]] || {
+    echo 'Expected a versioned image-wasm archive' >&2; exit 2;
   }
   (cd "$(dirname -- "$archive")" && sha256sum --check --strict "$name.sha256")
   scripts=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
