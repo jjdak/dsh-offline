@@ -7,12 +7,16 @@ const [app, cache] = process.argv.slice(2)
 if (!app || !cache) throw new Error('usage: stage-image-wasm.mjs APP CACHE')
 const modules = join(app, 'node_modules')
 const sharp = JSON.parse(await readFile(join(modules, 'sharp/package.json'), 'utf8'))
-if (sharp.version !== '0.35.3') throw new Error(`Update pinned WASM input for sharp ${sharp.version}`)
+const wasmIntegrity = {
+  '0.35.3': 'cZ0XkcYGpHZkqW6iCkqTcmUC0CD9DhD5d/qeZlZkfRBn6GnHniZXLUo5+9xw8Iv76YE6LQFN9YNBlKREcCG76w==',
+  '0.35.5': 'Ptsga1su4tQx+LLF1ECS9U6nz5kmrXKo6XVbtR48Ke3ZRxxgaWBu7IDtEe1quo8hiupwm6WFqxVlXaSf7IINGQ==',
+}[sharp.version]
+if (!wasmIntegrity) throw new Error(`Update pinned WASM input for sharp ${sharp.version}`)
 
 // Keep a private dependency tree for WASM, independent of hoisted native-package dependencies.
 const inputs = [
-  ['@img/sharp-wasm32', '0.35.3', 'https://registry.npmjs.org/@img/sharp-wasm32/-/sharp-wasm32-0.35.3.tgz',
-    'cZ0XkcYGpHZkqW6iCkqTcmUC0CD9DhD5d/qeZlZkfRBn6GnHniZXLUo5+9xw8Iv76YE6LQFN9YNBlKREcCG76w==', '@img/sharp-wasm32'],
+  ['@img/sharp-wasm32', sharp.version, `https://registry.npmjs.org/@img/sharp-wasm32/-/sharp-wasm32-${sharp.version}.tgz`,
+    wasmIntegrity, '@img/sharp-wasm32'],
   ['@emnapi/runtime', '1.11.3', 'https://registry.npmjs.org/@emnapi/runtime/-/runtime-1.11.3.tgz',
     'Xz4Tpyki7XyrpbUK1jR1AhdAdaXyhhY4lZ3neLodmhpuWfy2PAQN5B46sAiU4liOXGLkHypn/qU+jvfWSCYYLA==', '@img/sharp-wasm32/node_modules/@emnapi/runtime'],
   ['tslib', '2.8.1', 'https://registry.npmjs.org/tslib/-/tslib-2.8.1.tgz',

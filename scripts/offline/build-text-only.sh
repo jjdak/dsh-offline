@@ -328,7 +328,12 @@ if [[ ! -f "$node_pty_binary" ]]; then
 fi
 if ! $skip_build; then
   "${pnpm[@]}" --dir "$repo_root" run clean
-  "${pnpm[@]}" --dir "$repo_root" run build
+  # Newer upstream builds separate runtime artifacts from aggregate checks.
+  if "$node_bin" -e 'process.exit(require(process.argv[1]).scripts?.["build:artifacts"] ? 0 : 1)' "$repo_root/package.json"; then
+    "${pnpm[@]}" --dir "$repo_root" run build:artifacts
+  else
+    "${pnpm[@]}" --dir "$repo_root" run build
+  fi
 fi
 
 work_root="$(mktemp -d /tmp/dsh-offline-text.XXXXXX)"
@@ -682,8 +687,8 @@ cp "$archive_work" "$delivery_dir/$package_name.tar.gz"
   cd "$delivery_dir"
   sha256sum "$package_name.tar.gz" >"$package_name.tar.gz.sha256"
 )
-sed "s/@DSH_VERSION@/$version/g" "$builder_dir/install-and-run.sh.in" \
-  >"$delivery_dir/install-and-run.sh"
+"$node_bin" "$builder_dir/render-installer.mjs" "$builder_dir/install-and-run.sh.in" \
+  "$delivery_dir/install-and-run.sh" "$version"
 chmod 0755 "$delivery_dir/install-and-run.sh"
 bash -n "$delivery_dir/install-and-run.sh"
 (

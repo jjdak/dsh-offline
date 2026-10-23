@@ -38,9 +38,17 @@ scripts/offline/build-text-only-container.sh --source /root/deepseek-harness
 
 两个仓库的 `.env` 和真实 API 密钥不得进入离线包或 Release。包内只携带 `scripts/offline/dsh.env.example` 占位模板；目标机管理员在自己的 `DSH_HOME/.env` 中填写实际值。
 
-部署阶段使用 isolated 依赖布局读取产品锁文件，再实体化为归档目录。不要改回 hoisted 部署：当前 pnpm 的 legacy hoisted deploy 会忽略锁文件，导致 sharp 等依赖漂移；固定运行时版本检查会拒绝这类产物。
+部署阶段使用 isolated 依赖布局读取产品锁文件，再实体化为归档目录。不要改回 hoisted 部署：当前 pnpm 的 legacy hoisted deploy 会忽略锁文件，导致 sharp 等依赖漂移；固定运行时版本检查会拒绝这类产物。图片运行时按产品锁定的 sharp 版本选择经过固定 SHA-512 校验的同版本 WASM 包，目前支持 0.35.3 和 0.35.5。
 
 ## 验证范围
+
+新版产品启动时会将 `settings.yaml` 改名为 `settings.yaml.imported`，并尝试逐项导入当前 profile 的 `cordis.patch.yml`。安装器在任一文件存在时均不得重新复制公共配置；保留 `.imported`，不要通过改名触发重复导入。导入失败项需查看启动日志，`.imported` 存在不代表全部成功。迁移后通过 Web 设置管理配置。
+
+共享安装器回归使用 `node scripts/offline/verify-installer-upgrade.mjs OLD_ARCHIVE NEW_ARCHIVE`，覆盖首次/重复安装、升级，以及模拟迁移后公共配置存在/缺失两种情况，确保不重新生成 `settings.yaml`、不修改 profile 和用户数据。
+
+主安装器由 `render-installer.mjs` 从模板渲染，内嵌 `rebind-plugin-host.mjs`，不能仅复制 `.sh.in` 或只替换版本字符串。安装时会读取同一 `DSH_HOME/offline-plugins` 中的活动安装记录，先验证所有插件的最低依赖，再自动更新宿主依赖链接；不重装插件，不改写 profile 配置或用户数据。旧记录兼容 pet/memory，其他来源的插件不接管。失败时停止切换主命令入口，不能绕过错误继续启动。
+
+自动绑定回归由 `verify-plugin-installer.mjs` 覆盖旧记录、多 profile、失效旧宿主路径与失败前置验证；`verify-memory-container.sh` 通过真实主安装脚本切换安装位置、移走旧程序，并验证 pet/memory 加载、回退及数据保留。升级前应停止使用该数据目录的旧服务。
 
 修改构建脚本、运行时输入或包内容时，只运行离线包相关检查：
 
@@ -53,7 +61,7 @@ scripts/offline/build-text-only-container.sh --source /root/deepseek-harness
 
 图片版在完整构建命令中加 `--profile image-wasm`。除公共验证外，图片版验证 PNG/JPEG/WebP/GIF 附件的处理、存储及请求变体、EXIF 旋转和损坏图片拒绝；纯文字版继续验证图片拒绝行为。共享安装脚本修改还需验证原有 text-only 安装路径。容器通过不代表真实 3.10 内核或真实模型 API 已通过。
 
-完整容器构建负责依赖安装、产品源码仓库的旧构建输出清理与编译、Landlock 平台包 SHA-512 校验、`landlock-run` 可执行权限与 ELF 架构检查、打包前后内核探测、全归档 ELF 版本审计、无硬链接归档检查、SHA-256 校验、CLI 版本检查、图片附件拒绝检查、一键脚本首次安装与重复运行检查，以及经该脚本启动的带认证 Web 冒烟测试。任何一项失败都不得发布产物。
+完整容器构建负责依赖安装、产品源码仓库的旧构建输出清理与编译、Landlock 平台包 SHA-512 校验、`landlock-run` 可执行权限与 ELF 架构检查、打包前后内核探测、全归档 ELF 版本审计、无硬链接归档检查、SHA-256 校验、CLI 版本检查、图片附件拒绝检查、一键脚本首次安装与重复运行检查，以及经该脚本启动的带认证 Web 冒烟测试。新版产品提供 `build:artifacts` 时仅运行该产物构建入口，避免 `build` 附带的测试及脚本聚合类型检查；旧版沿用原构建入口。任何一项失败都不得发布产物。
 
 仅修改文档或 Release 元数据时不重新构建离线包；只检查改动文档、现有 SHA-256、Release 资产状态和 Git diff。除非用户明确要求，不运行上游仓库级 `pnpm run test`、`test:coverage`、`build`、`typecheck`、`lint`、`hygiene`、`doc-sync` 或其他全仓聚合流程。
 
