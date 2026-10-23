@@ -46,6 +46,10 @@ scripts/offline/build-text-only-container.sh --source /root/deepseek-harness
 
 共享安装器回归使用 `node scripts/offline/verify-installer-upgrade.mjs OLD_ARCHIVE NEW_ARCHIVE`，覆盖首次/重复安装、升级，以及模拟迁移后公共配置存在/缺失两种情况，确保不重新生成 `settings.yaml`、不修改 profile 和用户数据。
 
+主安装器由 `render-installer.mjs` 从模板渲染，内嵌 `rebind-plugin-host.mjs`，不能仅复制 `.sh.in` 或只替换版本字符串。安装时会读取同一 `DSH_HOME/offline-plugins` 中的活动安装记录，先验证所有插件的最低依赖，再自动更新宿主依赖链接；不重装插件，不改写 profile 配置或用户数据。旧记录兼容 pet/memory，其他来源的插件不接管。失败时停止切换主命令入口，不能绕过错误继续启动。
+
+自动绑定回归由 `verify-plugin-installer.mjs` 覆盖旧记录、多 profile、失效旧宿主路径与失败前置验证；`verify-memory-container.sh` 通过真实主安装脚本切换安装位置、移走旧程序，并验证 pet/memory 加载、回退及数据保留。升级前应停止使用该数据目录的旧服务。
+
 修改构建脚本、运行时输入或包内容时，只运行离线包相关检查：
 
 ```bash

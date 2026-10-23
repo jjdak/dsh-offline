@@ -687,8 +687,8 @@ cp "$archive_work" "$delivery_dir/$package_name.tar.gz"
   cd "$delivery_dir"
   sha256sum "$package_name.tar.gz" >"$package_name.tar.gz.sha256"
 )
-sed "s/@DSH_VERSION@/$version/g" "$builder_dir/install-and-run.sh.in" \
-  >"$delivery_dir/install-and-run.sh"
+"$node_bin" "$builder_dir/render-installer.mjs" "$builder_dir/install-and-run.sh.in" \
+  "$delivery_dir/install-and-run.sh" "$version"
 chmod 0755 "$delivery_dir/install-and-run.sh"
 bash -n "$delivery_dir/install-and-run.sh"
 (

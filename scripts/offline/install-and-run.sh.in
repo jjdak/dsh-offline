@@ -132,6 +132,7 @@ printf '  3. 创建 %s，并更新 ~/.local/bin/dsh 和 ~/.bashrc。\n' "$planne
 printf '  4. 保留已有配置、迁移记录、.env 和历史会话；settings.yaml 与 settings.yaml.imported 均不存在时从 %s 初始化。\n' \
   "$public_settings_path"
 printf '  5. 验证 dsh 版本，并检查 Landlock 或 bubblewrap。\n'
+printf '     自动识别已有离线插件并更新宿主依赖；升级前请先停止旧 DSH 服务。\n'
 if $install_only; then
   printf '  6. 验证完成后退出，不启动 Web 服务。\n\n'
 else
@@ -233,6 +234,11 @@ else
 fi
 
 [ "$installed" = true ] || fail "安装状态异常"
+# Check and rebind managed plugins before switching the public command entry.
+# This code is embedded when rendering, including for previously built archives.
+"$install_root/node/bin/node" --input-type=module - "$install_root" "$planned_dsh_home" <<'__DSH_PLUGIN_HOST_JS__'
+@OFFLINE_PLUGIN_HOST_CODE@
+__DSH_PLUGIN_HOST_JS__
 mkdir -p "$user_bin"
 if { [ -e "$dsh_link" ] || [ -L "$dsh_link" ]; } && [ ! -L "$dsh_link" ]; then
   fail "$dsh_link 已存在且不是软链接，请先处理该文件"

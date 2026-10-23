@@ -16,6 +16,7 @@
 
 ## 两个独立环境的说明
 
+- [通用插件离线安装器：安装、回退与制作](scripts/offline/README-plugin.zh.md)：所有文件包共用安装入口；已验证 `dsh-pet 0.3.7` 浏览器版和 [dsh-memory 0.8.1 自带 Python 版](scripts/offline/INSTALL-memory.zh.md)搭配 `0.2.1-alpha.4 image-wasm`；无需目标机 npm/pnpm。
 - [制作经验、复用工具与下一版检查清单](docs/packaging-lessons.zh.md)：依赖适配坑点、断网 CentOS 7 验证及跨版本安装回归工具。
 - [环境一：现有仓库的基础 CPU 纯文字离线包](docs/environment-a-text-only.zh.md)：不支持 x86-64-v2 的目标环境及现有交付边界。
 - [环境二：支持 x86-64-v2 的 CentOS 7 图片增强包](docs/environment-b-centos7-wasm.zh.md)：原始调研、独立实施与验证记录；保留图片，按用户要求排除实验性语音输入。

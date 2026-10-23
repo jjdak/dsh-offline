@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { basename, dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { renderInstaller } from './render-installer.mjs';
 
 const args = process.argv.slice(2);
 if (args.length !== 2 || args.includes('--help')) {
@@ -24,7 +25,7 @@ try {
   const home = join(work, 'home');
   await mkdir(home);
   await writeFile(join(work, 'settings.yaml'), await readFile(join(scripts, 'settings-openai-compatible.yaml.example')));
-  const template = await readFile(join(scripts, 'install-and-run.sh.in'), 'utf8');
+  const template = renderInstaller(join(scripts, 'install-and-run.sh.in'));
   assert.equal(template.split('PUBLIC_ARCHIVE_PATH=""').length, 2);
   const shellQuote = value => `'${value.replaceAll("'", "'\\''")}'`;
   const installer = join(work, 'install.sh');
